@@ -2,6 +2,7 @@ globals [
   percent-similar  ;; on the average, what percent of a turtle's neighbors
                    ;; are the same color as that turtle?
   percent-unhappy  ;; what percent of the turtles are unhappy?
+  percent-similar-2 ;;
 ]
 
 turtles-own [
@@ -41,21 +42,25 @@ to move-unhappy-turtles
     [ find-new-spot ]
 end
 
+to find-new-spot
+  rt random-float 360
+  fd random-float 10
+  if any? other turtles-here [
+    ;; if occupied, back up and try again next tick
+    bk 1
+  ]
+end
 
 
 to update-turtles
   ask turtles [
-    ;; in next two lines, we use "neighbors" to test the eight patches
-    ;; surrounding the current patch
+    ;; all turtles within observation-distance, excluding myself
     let nearby-turtles other turtles in-radius observation-distance
-    ;; count the number of my neighbors that are the same color as me
-    set similar-nearby count nearby-turtles
-      with [color = [color] of myself]
 
-    ;; count the total number of neighbors
+    set similar-nearby count nearby-turtles with [color = [color] of myself]
+
     set total-nearby count nearby-turtles
 
-    ;; I’m happy if there are at least the minimal number of same-colored neighbors
     ifelse total-nearby = 0 [
       set happy? false
     ] [
@@ -64,11 +69,17 @@ to update-turtles
   ]
 end
 
+
 to update-globals
   let similar-neighbors sum [similar-nearby] of turtles
   let total-neighbors sum [total-nearby] of turtles
   set percent-similar (similar-neighbors / total-neighbors) * 100
   set percent-unhappy (count turtles with [not happy?]) / (count turtles) * 100
+
+  let majority-similar count turtles with [
+    total-nearby > 0 and (similar-nearby / total-nearby) > 0.5
+  ]
+  set percent-similar-2 (majority-similar / count turtles) * 100
 end
 
 
@@ -101,6 +112,17 @@ GRAPHICS-WINDOW
 1
 ticks
 30.0
+
+MONITOR
+0
+0
+0
+0
+NIL
+NIL
+17
+1
+11
 
 MONITOR
 470
@@ -184,7 +206,7 @@ SLIDER
 %-similar-wanted
 0.0
 100.0
-59.0
+29.0
 1.0
 1
 %
@@ -225,15 +247,15 @@ NIL
 0
 
 SLIDER
-890
-85
-1077
-118
+795
+200
+982
+233
 observation-distance
 observation-distance
 0
 100
-98.0
+50.0
 1
 1
 NIL

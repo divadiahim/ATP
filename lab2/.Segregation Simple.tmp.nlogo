@@ -114,17 +114,6 @@ ticks
 30.0
 
 MONITOR
-0
-0
-0
-0
-NIL
-NIL
-17
-1
-11
-
-MONITOR
 470
 410
 583
@@ -191,7 +180,7 @@ number
 number
 500
 2500
-1840.0
+2070.0
 10
 1
 NIL
@@ -206,7 +195,7 @@ SLIDER
 %-similar-wanted
 0.0
 100.0
-29.0
+30.0
 1.0
 1
 %
@@ -254,12 +243,23 @@ SLIDER
 observation-distance
 observation-distance
 0
-100
-50.0
-1
+20
+2.0
+0.5
 1
 NIL
 HORIZONTAL
+
+MONITOR
+895
+350
+1007
+395
+NIL
+percent-similar-2
+17
+1
+11
 
 @#$#@#$#@
 ## ACKNOWLEDGMENT

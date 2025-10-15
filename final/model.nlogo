@@ -1,99 +1,56 @@
 globals [
-  percent-similar  ;; on the average, what percent of a turtle's neighbors
-                   ;; are the same color as that turtle?
-  percent-unhappy  ;; what percent of the turtles are unhappy?
-  percent-similar-2 ;;
+  rumor-truth?
+  avg-belief-history
 ]
 
 turtles-own [
-  happy?          ;; for each turtle, indicates whether at least %-similar-wanted percent of
-                  ;; that turtle's neighbors are the same color as the turtle
-  similar-nearby  ;; how many neighboring patches have a turtle with my color?
-  total-nearby    ;; how many neighboring patches have a turtle?
+  belief
+  trust-to
+  rumor-known?
+  memory-correct
+  memory-incorrect
 ]
 
 
 to setup
   clear-all
-  ;; create a turtle on NUMBER randomly selected patches.
-  ;; note that slider's maximum value is 2500 which is a little less than the total number of patches
-  create-turtles number [
+  set-default-shape turtles "person"
+
+  create-turtles population-size [
     setxy random-xcor random-ycor
+    set color gray
+    set rumor-known? false
+    set belief 0
+    set trust-to n-values population-size [ random-float 1 ]
+    set memory-correct 0
+    set memory-incorrect 0
   ]
+
   ask turtles [
-    ;; make approximately half the turtles red and the other half green
-    set color one-of [ red green ]
+    create-links-with n-of avg-degree other turtles
   ]
-  update-turtles
-  update-globals
+
+
+  set rumor-truth? one-of [true false]
+  ask n-of initial-seeds turtles [
+    set rumor-known? true
+    set belief one-of [0.8 0.9]      ;; strong belief
+    set color red
+  ]
+
+  set avg-belief-history []
   reset-ticks
 end
 
-to go
-  if all? turtles [ happy? ] [ stop ]
-  move-unhappy-turtles
-  update-turtles
-  update-globals
-  tick
-end
-
-to move-unhappy-turtles
-  ask turtles with [ not happy? ]
-    [ find-new-spot ]
-end
-
-to find-new-spot
-  rt random-float 360
-  fd random-float 10
-  if any? other turtles-here [
-    ;; if occupied, back up and try again next tick
-    bk 1
-  ]
-end
-
-
-to update-turtles
-  ask turtles [
-    ;; all turtles within observation-distance, excluding myself
-    let nearby-turtles other turtles in-radius observation-distance
-
-    set similar-nearby count nearby-turtles with [color = [color] of myself]
-
-    set total-nearby count nearby-turtles
-
-    ifelse total-nearby = 0 [
-      set happy? false
-    ] [
-      set happy? (similar-nearby / total-nearby) >= (%-similar-wanted / 100)
-    ]
-  ]
-end
-
-
-to update-globals
-  let similar-neighbors sum [similar-nearby] of turtles
-  let total-neighbors sum [total-nearby] of turtles
-  set percent-similar (similar-neighbors / total-neighbors) * 100
-  set percent-unhappy (count turtles with [not happy?]) / (count turtles) * 100
-
-  let majority-similar count turtles with [
-    total-nearby > 0 and (similar-nearby / total-nearby) > 0.5
-  ]
-  set percent-similar-2 (majority-similar / count turtles) * 100
-end
-
-
-; Copyright 2006 Uri Wilensky.
-; See Info tab for full copyright and license.
 @#$#@#$#@
 GRAPHICS-WINDOW
-273
+210
 10
-638
-376
+647
+448
 -1
 -1
-7.0
+13.0
 1
 10
 1
@@ -103,251 +60,172 @@ GRAPHICS-WINDOW
 1
 1
 1
--25
-25
--25
-25
-1
-1
+-16
+16
+-16
+16
+0
+0
 1
 ticks
 30.0
 
-MONITOR
-470
-410
-583
-455
-Percent Unhappy
-percent-unhappy
-1
-1
-11
-
-MONITOR
-346
-410
-454
-455
-Percent Similar
-percent-similar
-1
-1
-11
-
-PLOT
-10
-140
-259
-283
-Percent Similar
-time
-%
-0.0
-25.0
-0.0
-100.0
-true
-false
-"" ""
-PENS
-"percent" 1.0 0 -2674135 true "" "plot percent-similar"
-
-PLOT
-10
-284
-259
-448
-Percent Unhappy
-time
-%
-0.0
-25.0
-0.0
-100.0
-true
-false
-"" ""
-PENS
-"percent" 1.0 0 -10899396 true "" "plot percent-unhappy"
-
 SLIDER
-15
-55
-240
-88
-number
-number
+24
+58
+196
+91
+population-size
+population-size
+10
 500
-2500
-2070.0
-10
+50.0
+1
 1
 NIL
 HORIZONTAL
 
 SLIDER
-15
-95
-240
-128
-%-similar-wanted
-%-similar-wanted
-0.0
-100.0
-30.0
-1.0
+16
+158
+188
+191
+avg-degree
+avg-degree
 1
-%
-HORIZONTAL
-
-BUTTON
-34
-14
-114
-47
-setup
-setup
-NIL
-1
-T
-OBSERVER
-NIL
-NIL
-NIL
-NIL
-1
-
-BUTTON
-124
-14
-204
-47
-go
-go
-T
-1
-T
-OBSERVER
-NIL
-NIL
-NIL
-NIL
-0
-
-SLIDER
-795
-200
-982
-233
-observation-distance
-observation-distance
-0
 20
-2.0
-0.5
+20.0
+1
 1
 NIL
 HORIZONTAL
 
-MONITOR
-895
-350
-1007
-395
-NIL
-percent-similar-2
-17
+SLIDER
+28
+258
+200
+291
+initial-seeds
+initial-seeds
 1
-11
+10
+10.0
+1
+1
+NIL
+HORIZONTAL
+
+SLIDER
+826
+161
+998
+194
+learning-rate
+learning-rate
+0
+1
+1.0
+0.05
+1
+NIL
+HORIZONTAL
+
+SLIDER
+738
+300
+910
+333
+max-ticks
+max-ticks
+100
+2000
+100.0
+500
+1
+NIL
+HORIZONTAL
+
+SWITCH
+1160
+311
+1287
+344
+plot-belief?
+plot-belief?
+1
+1
+-1000
+
+BUTTON
+747
+68
+814
+101
+NIL
+setup
+NIL
+1
+T
+OBSERVER
+NIL
+NIL
+NIL
+NIL
+1
+
+BUTTON
+927
+54
+990
+87
+NIL
+go
+T
+1
+T
+OBSERVER
+NIL
+NIL
+NIL
+NIL
+0
 
 @#$#@#$#@
-## ACKNOWLEDGMENT
-
-This model is from Chapter Three of the book "Introduction to Agent-Based Modeling: Modeling Natural, Social and Engineered Complex Systems with NetLogo", by Uri Wilensky & William Rand.
-
-* Wilensky, U. & Rand, W. (2015). Introduction to Agent-Based Modeling: Modeling Natural, Social and Engineered Complex Systems with NetLogo. Cambridge, MA. MIT Press.
-
-This model is in the IABM Textbook folder of the NetLogo Models Library. The model, as well as any updates to the model, can also be found on the textbook website: http://www.intro-to-abm.com/.
-
 ## WHAT IS IT?
 
-This project models the behavior of two types of turtles in a mythical pond. The red turtles and green turtles get along with one another. But each turtle wants to make sure that it lives near some of "its own." That is, each red turtle wants to live near at least some red turtles, and each green turtle wants to live near at least some green turtles. The simulation shows how these individual preferences ripple through the pond, leading to large-scale patterns.
+(a general understanding of what the model is trying to show or explain)
 
-This project was inspired by Thomas Schelling's writings about social systems (particularly with regards to housing segregation in cities).
+## HOW IT WORKS
 
-This model is a simplified version of the Segregation model that is in the Social Science section of the NetLogo models library.
+(what rules the agents use to create the overall behavior of the model)
 
 ## HOW TO USE IT
 
-Click the SETUP button to set up the turtles. There are equal numbers of red and green turtles. The turtles move around until there is at most one turtle on a patch.  Click GO to start the simulation. If turtles don't have enough same-color neighbors, they jump to a nearby patch.
-
-The NUMBER slider controls the total number of turtles. (It takes effect the next time you click SETUP.)  The %-SIMILAR-WANTED slider controls the percentage of same-color turtles that each turtle wants among its neighbors. For example, if the slider is set at 30, each green turtle wants at least 30% of its neighbors to be green turtles.
-
-The "PERCENT SIMILAR" monitor shows the average percentage of same-color neighbors for each turtle. It starts at about 0.5, since each turtle starts (on average) with an equal number of red and green turtles as neighbors. The "PERCENT UNHAPPY" monitor shows the percent of turtles that have fewer same-color neighbors than they want (and thus want to move).  Both monitors are also plotted.
+(how to use the model, including a description of each of the items in the Interface tab)
 
 ## THINGS TO NOTICE
 
-When you execute SETUP, the red and green turtles are randomly distributed throughout the pond. But many turtles are "unhappy" since they don't have enough same-color neighbors. The unhappy turtles jump to new locations in the vicinity. But in the new locations, they might tip the balance of the local population, prompting other turtles to leave. If a few red turtles move into an area, the local green turtles might leave. But when the green turtles move to a new area, they might prompt red turtles to leave that area.
-
-Over time, the number of unhappy turtles decreases. But the pond becomes more segregated, with clusters of red turtles and clusters of green turtles.
-
-In the case where each turtle wants at least 30% same-color neighbors, the turtles end up with (on average) 70% same-color neighbors. So relatively small individual preferences can lead to significant overall segregation.
+(suggested things for the user to notice while running the model)
 
 ## THINGS TO TRY
 
-Try different values for %-SIMILAR-WANTED. How does the overall degree of segregation change?
+(suggested things for the user to try to do (move sliders, switches, etc.) with the model)
 
-If each turtle wants at least 40% same-color neighbors, what percentage (on average) do they end up with?
+## EXTENDING THE MODEL
+
+(suggested things to add or change in the Code tab to make the model more complicated, detailed, accurate, etc.)
 
 ## NETLOGO FEATURES
 
-In the UPDATE-GLOBALS procedure, note the use of SUM, COUNT and WITH to compute the percentages displayed in the monitors and plots.
+(interesting or unusual features of NetLogo that the model uses, particularly in the Code tab; or where workarounds were needed for missing features)
 
 ## RELATED MODELS
 
-Segregation
+(models in the NetLogo Models Library and elsewhere which are of related interest)
 
 ## CREDITS AND REFERENCES
 
-This model is a simplified version of:
-
-* Wilensky, U. (1997).  NetLogo Segregation model.  http://ccl.northwestern.edu/netlogo/models/Segregation.  Center for Connected Learning and Computer-Based Modeling, Northwestern University, Evanston, IL.
-
-The original work by Thomas Schelling was published in:
-Schelling, T. (1978). Micromotives and Macrobehavior. New York: Norton.
-
-See also: Rauch, J. (2002). Seeing Around Corners; The Atlantic Monthly; April 2002;Volume 289, No. 4; 35-48. https://www.theatlantic.com/magazine/archive/2002/04/seeing-around-corners/302471/
-
-## HOW TO CITE
-
-This model is part of the textbook, “Introduction to Agent-Based Modeling: Modeling Natural, Social and Engineered Complex Systems with NetLogo.”
-
-If you mention this model or the NetLogo software in a publication, we ask that you include the citations below.
-
-For the model itself:
-
-* Wilensky, U., Rand, W. (2006).  NetLogo Segregation Simple model.  http://ccl.northwestern.edu/netlogo/models/SegregationSimple.  Center for Connected Learning and Computer-Based Modeling, Northwestern Institute on Complex Systems, Northwestern University, Evanston, IL.
-
-Please cite the NetLogo software as:
-
-* Wilensky, U. (1999). NetLogo. http://ccl.northwestern.edu/netlogo/. Center for Connected Learning and Computer-Based Modeling, Northwestern University, Evanston, IL.
-
-Please cite the textbook as:
-
-* Wilensky, U. & Rand, W. (2015). Introduction to Agent-Based Modeling: Modeling Natural, Social and Engineered Complex Systems with NetLogo. Cambridge, MA. MIT Press.
-
-## COPYRIGHT AND LICENSE
-
-Copyright 2006 Uri Wilensky.
-
-![CC BY-NC-SA 3.0](http://ccl.northwestern.edu/images/creativecommons/byncsa.png)
-
-This work is licensed under the Creative Commons Attribution-NonCommercial-ShareAlike 3.0 License.  To view a copy of this license, visit https://creativecommons.org/licenses/by-nc-sa/3.0/ or send a letter to Creative Commons, 559 Nathan Abbott Way, Stanford, California 94305, USA.
-
-Commercial licenses are also available. To inquire about commercial licenses, please contact Uri Wilensky at uri@northwestern.edu.
-
-<!-- 2006 Cite: Wilensky, U., Rand, W. -->
+(a reference to the model's URL on the web if it has one, as well as any other necessary credits, citations, and links)
 @#$#@#$#@
 default
 true
@@ -515,17 +393,6 @@ true
 0
 Line -7500403 true 150 0 150 150
 
-link
-true
-0
-Line -7500403 true 150 0 150 300
-
-link direction
-true
-0
-Line -7500403 true 150 150 30 225
-Line -7500403 true 150 150 270 225
-
 pentagon
 false
 0
@@ -551,6 +418,22 @@ Polygon -7500403 true true 165 180 165 210 225 180 255 120 210 135
 Polygon -7500403 true true 135 105 90 60 45 45 75 105 135 135
 Polygon -7500403 true true 165 105 165 135 225 105 255 45 210 60
 Polygon -7500403 true true 135 90 120 45 150 15 180 45 165 90
+
+sheep
+false
+15
+Circle -1 true true 203 65 88
+Circle -1 true true 70 65 162
+Circle -1 true true 150 105 120
+Polygon -7500403 true false 218 120 240 165 255 165 278 120
+Circle -7500403 true false 214 72 67
+Rectangle -1 true true 164 223 179 298
+Polygon -1 true true 45 285 30 285 30 240 15 195 45 210
+Circle -1 true true 3 83 150
+Rectangle -1 true true 65 221 80 296
+Polygon -1 true true 195 285 210 285 210 240 240 210 195 210
+Polygon -7500403 true false 276 85 285 105 302 99 294 83
+Polygon -7500403 true false 219 85 210 105 193 99 201 83
 
 square
 false
@@ -636,6 +519,13 @@ Line -7500403 true 40 84 269 221
 Line -7500403 true 40 216 269 79
 Line -7500403 true 84 40 221 269
 
+wolf
+false
+0
+Polygon -16777216 true false 253 133 245 131 245 133
+Polygon -7500403 true true 2 194 13 197 30 191 38 193 38 205 20 226 20 257 27 265 38 266 40 260 31 253 31 230 60 206 68 198 75 209 66 228 65 243 82 261 84 268 100 267 103 261 77 239 79 231 100 207 98 196 119 201 143 202 160 195 166 210 172 213 173 238 167 251 160 248 154 265 169 264 178 247 186 240 198 260 200 271 217 271 219 262 207 258 195 230 192 198 210 184 227 164 242 144 259 145 284 151 277 141 293 140 299 134 297 127 273 119 270 105
+Polygon -7500403 true true -1 195 14 180 36 166 40 153 53 140 82 131 134 133 159 126 188 115 227 108 236 102 238 98 268 86 269 92 281 87 269 103 269 113
+
 x
 false
 0
@@ -659,5 +549,5 @@ true
 Line -7500403 true 150 150 90 180
 Line -7500403 true 150 150 210 180
 @#$#@#$#@
-1
+0
 @#$#@#$#@

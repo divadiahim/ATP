@@ -1,0 +1,49 @@
+<experiments>
+  <experiment name="B_event_campaign_density_x_spread" repetitions="50" runMetricsEveryStep="false">
+    <setup>setup
+event-campaign 5</setup>
+
+    <go>repeat 300 [ go ]</go>
+    <timeLimit steps="300"/>
+
+    <!-- metrics -->
+    <metric>all? patches with [pcolor != black] [ recognized? ]</metric>
+    <metric>(count patches with [pcolor != black and recognized?]) / (count patches with [pcolor != black])</metric>
+    <metric>get-exposure-rate</metric>
+    <metric>ticks</metric>
+    <metric>used-seed</metric>
+
+    <!-- sweeps -->
+    <enumeratedValueSet variable="agent-density">
+      <value value="30"/>
+      <value value="40"/>
+      <value value="50"/>
+      <value value="60"/>
+      <value value="70"/>
+    </enumeratedValueSet>
+
+    <enumeratedValueSet variable="strength-of-spread">
+      <value value="1"/>
+      <value value="2"/>
+      <value value="3"/>
+      <value value="4"/>
+    </enumeratedValueSet>
+
+    <!-- fixed params -->
+    <enumeratedValueSet variable="recognition-threshold">
+      <value value="10"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="threshold-variability">
+      <value value="10"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="memory-decay-rate">
+      <value value="0.1"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="saturation?">
+      <value value="false"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="hardcoded-stop?">
+      <value value="true"/>
+    </enumeratedValueSet>
+  </experiment>
+</experiments>

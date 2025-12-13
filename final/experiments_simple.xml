@@ -1,0 +1,57 @@
+<experiments>
+  <experiment name="false-vs-true-rumor" repetitions="20" runMetricsEveryStep="false">
+    <setup>setup</setup>
+    <go>go</go>
+    <timeLimit steps="500"/>
+    <metric>count turtles with [rumor-known?] / population-size</metric>
+    <metric>mean [belief] of turtles</metric>
+    <metric>count turtles with [belief &gt; 0.5]</metric>
+    <metric>variance [belief] of turtles</metric>
+    <enumeratedValueSet variable="rumor-is-true?">
+      <value value="&quot;true&quot;"/>
+      <value value="&quot;false&quot;"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="population-size">
+      <value value="200"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="avg-degree">
+      <value value="6"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="initial-seeds">
+      <value value="5"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="network-type">
+      <value value="&quot;small-world&quot;"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="heterogeneity-level">
+      <value value="0.2"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="learning-rate">
+      <value value="0.1"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="initial-trust-mean">
+      <value value="0.5"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="initial-trust-sd">
+      <value value="0.15"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="hearing-threshold">
+      <value value="3"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="trust-update-interval">
+      <value value="10"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="verify-rumor?">
+      <value value="false"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="verification-delay">
+      <value value="200"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="show-trust-links?">
+      <value value="false"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="max-ticks">
+      <value value="500"/>
+    </enumeratedValueSet>
+  </experiment>
+</experiments>

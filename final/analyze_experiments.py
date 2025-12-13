@@ -1,6 +1,7 @@
 """
 Rumor Propagation Experiment Analysis
 Analyzes BehaviorSpace output from NetLogo model
+Optimized for time-series false vs true rumor experiment
 """
 
 import pandas as pd
@@ -9,6 +10,8 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from scipy import stats
 from scipy.optimize import curve_fit
+import warnings
+warnings.filterwarnings('ignore')
 
 # Set style
 sns.set_style("whitegrid")
@@ -32,410 +35,344 @@ def load_experiment_data(filepath):
     
     return df
 
-def analyze_false_vs_true(df):
+def analyze_false_vs_true_timeseries(df):
     """
-    Analyze Experiment 1: False vs True Rumor Comparison
+    Comprehensive analysis of false vs true rumor experiment with time-series data
     """
-    print("=" * 70)
-    print("EXPERIMENT 1: FALSE VS TRUE RUMOR COMPARISON")
-    print("=" * 70)
+    print("=" * 80)
+    print("FALSE VS TRUE RUMOR COMPARISON - TIME SERIES ANALYSIS")
+    print("=" * 80)
+    
+    # Check if this is time-series data
+    has_timeseries = 'ticks' in df.columns
+    
+    if not has_timeseries:
+        print("⚠️  No time-series data found (no 'ticks' column)")
+        print("    Performing end-state analysis only...")
+        df['ticks'] = 0  # Treat as single time point
     
     # Separate by truth value
     true_rumors = df[df['rumor-is-true?'] == 'true']
     false_rumors = df[df['rumor-is-true?'] == 'false']
     
-    # Calculate statistics
-    print("\n📊 DESCRIPTIVE STATISTICS")
-    print("-" * 70)
+    print(f"\n📊 Dataset Info:")
+    print(f"  Total data points: {len(df)}")
+    print(f"  True rumor runs: {len(true_rumors['[run number]'].unique()) if '[run number]' in df.columns else 'N/A'}")
+    print(f"  False rumor runs: {len(false_rumors['[run number]'].unique()) if '[run number]' in df.columns else 'N/A'}")
+    if has_timeseries:
+        print(f"  Time range: {df['ticks'].min():.0f} to {df['ticks'].max():.0f} ticks")
     
+    # Define metrics with their new column names
     metrics = [
-        ('Awareness (%)', 'count turtles with [rumor-known?] / population-size'),
-        ('Mean Belief', 'mean [belief] of turtles'),
-        ('Strong Believers (%)', 'count turtles with [belief > 0.5]'),
-        ('Belief Variance', 'variance [belief] of turtles')
+        ('Awareness (%)', 'count turtles with [rumor-known?] / population-size', 100),
+        ('Mean Belief', 'mean [belief] of turtles', 1),
+        ('Aware Mean Belief', 'ifelse-value (any? turtles with [rumor-known?]) [mean [belief] of turtles with [rumor-known?]] [0]', 1),
+        ('Strong Believers (%)', 'count turtles with [belief > 0.5] / population-size', 100),
+        ('Very Strong Believers (%)', 'count turtles with [belief > 0.7] / population-size', 100),
+        ('Belief Variance', 'variance [belief] of turtles', 1),
+        ('Max Belief', 'max [belief] of turtles', 1),
     ]
     
-    for metric_name, col_name in metrics:
-        if col_name in df.columns:
-            true_mean = true_rumors[col_name].mean()
-            true_std = true_rumors[col_name].std()
-            false_mean = false_rumors[col_name].mean()
-            false_std = false_rumors[col_name].std()
+    # 1. TIME SERIES VISUALIZATION
+    if has_timeseries:
+        print("\n" + "=" * 80)
+        print("📈 TIME SERIES DYNAMICS")
+        print("=" * 80)
+        
+        fig, axes = plt.subplots(2, 3, figsize=(18, 10))
+        fig.suptitle('Rumor Spread Dynamics: False vs True Rumors', fontsize=16, fontweight='bold')
+        axes = axes.flatten()
+        
+        for idx, (metric_name, col_name, scale) in enumerate(metrics[:6]):
+            if col_name not in df.columns:
+                continue
+                
+            ax = axes[idx]
             
-            print(f"\n{metric_name}:")
-            print(f"  True  Rumors: {true_mean:.4f} ± {true_std:.4f}")
-            print(f"  False Rumors: {false_mean:.4f} ± {false_std:.4f}")
-            print(f"  Difference:   {false_mean - true_mean:+.4f}")
+            # Plot individual runs with transparency
+            for run_num in true_rumors['[run number]'].unique():
+                run_data = true_rumors[true_rumors['[run number]'] == run_num].sort_values('ticks')
+                ax.plot(run_data['ticks'], run_data[col_name] * scale, 
+                       alpha=0.1, color='green', linewidth=0.5)
             
-            # T-test
-            t_stat, p_value = stats.ttest_ind(false_rumors[col_name], true_rumors[col_name])
-            print(f"  T-test: t={t_stat:.3f}, p={p_value:.4f} {'***' if p_value < 0.001 else '**' if p_value < 0.01 else '*' if p_value < 0.05 else 'ns'}")
+            for run_num in false_rumors['[run number]'].unique():
+                run_data = false_rumors[false_rumors['[run number]'] == run_num].sort_values('ticks')
+                ax.plot(run_data['ticks'], run_data[col_name] * scale,
+                       alpha=0.1, color='red', linewidth=0.5)
             
-            # Effect size (Cohen's d)
-            pooled_std = np.sqrt(((len(true_rumors)-1)*true_std**2 + (len(false_rumors)-1)*false_std**2) / (len(true_rumors)+len(false_rumors)-2))
+            # Plot mean trajectories with confidence intervals
+            for truth_val, color, label in [('true', 'green', 'True Rumors'), 
+                                             ('false', 'red', 'False Rumors')]:
+                subset = df[df['rumor-is-true?'] == truth_val]
+                grouped = subset.groupby('ticks')[col_name]
+                
+                mean_traj = grouped.mean() * scale
+                std_traj = grouped.std() * scale
+                sem_traj = grouped.sem() * scale
+                
+                ax.plot(mean_traj.index, mean_traj.values,
+                       color=color, linewidth=3, label=label)
+                
+                # 95% confidence interval
+                ax.fill_between(mean_traj.index,
+                               mean_traj.values - 1.96*sem_traj.values,
+                               mean_traj.values + 1.96*sem_traj.values,
+                               color=color, alpha=0.2)
+            
+            ax.set_xlabel('Time (ticks)', fontsize=10)
+            ax.set_ylabel(metric_name, fontsize=10)
+            ax.set_title(metric_name, fontsize=11, fontweight='bold')
+            ax.legend(fontsize=9)
+            ax.grid(True, alpha=0.3)
+        
+        plt.tight_layout()
+        plt.savefig('pngs/timeseries_dynamics.png', dpi=300, bbox_inches='tight')
+        print("✅ Saved: pngs/timeseries_dynamics.png")
+        plt.close()
+    
+    # 2. END-STATE COMPARISON (Final tick values)
+    print("\n" + "=" * 80)
+    print("📊 END-STATE COMPARISON (Final Values)")
+    print("=" * 80)
+    
+    # Get final values for each run
+    if has_timeseries and '[run number]' in df.columns:
+        final_values = df.loc[df.groupby('[run number]')['ticks'].idxmax()]
+    else:
+        final_values = df
+    
+    true_final = final_values[final_values['rumor-is-true?'] == 'true']
+    false_final = final_values[final_values['rumor-is-true?'] == 'false']
+    
+    print(f"\nComparison based on {len(true_final)} true and {len(false_final)} false rumor runs\n")
+    
+    for metric_name, col_name, scale in metrics:
+        if col_name not in final_values.columns:
+            continue
+            
+        true_vals = true_final[col_name] * scale
+        false_vals = false_final[col_name] * scale
+        
+        true_mean = true_vals.mean()
+        true_std = true_vals.std()
+        false_mean = false_vals.mean()
+        false_std = false_vals.std()
+        
+        print(f"{metric_name}:")
+        print(f"  True  Rumors: {true_mean:.4f} ± {true_std:.4f}")
+        print(f"  False Rumors: {false_mean:.4f} ± {false_std:.4f}")
+        print(f"  Difference:   {false_mean - true_mean:+.4f}")
+        
+        # T-test
+        t_stat, p_value = stats.ttest_ind(false_vals, true_vals)
+        sig = '***' if p_value < 0.001 else '**' if p_value < 0.01 else '*' if p_value < 0.05 else 'ns'
+        print(f"  T-test: t={t_stat:.3f}, p={p_value:.4f} {sig}")
+        
+        # Effect size (Cohen's d)
+        pooled_std = np.sqrt(((len(true_vals)-1)*true_std**2 + (len(false_vals)-1)*false_std**2) / 
+                            (len(true_vals)+len(false_vals)-2))
+        if pooled_std > 0:
             cohens_d = (false_mean - true_mean) / pooled_std
-            print(f"  Cohen's d: {cohens_d:.3f} ({'small' if abs(cohens_d) < 0.5 else 'medium' if abs(cohens_d) < 0.8 else 'large'} effect)")
+            effect_label = 'small' if abs(cohens_d) < 0.5 else 'medium' if abs(cohens_d) < 0.8 else 'large'
+            print(f"  Cohen's d: {cohens_d:.3f} ({effect_label} effect)")
+        print()
     
-    # Visualization
-    fig, axes = plt.subplots(2, 2, figsize=(14, 10))
-    fig.suptitle('False vs True Rumor Comparison', fontsize=16, fontweight='bold')
+    # 3. END-STATE VISUALIZATION
+    fig, axes = plt.subplots(2, 3, figsize=(16, 9))
+    fig.suptitle('False vs True Rumor: Final State Comparison', fontsize=16, fontweight='bold')
+    axes = axes.flatten()
     
-    for idx, (metric_name, col_name) in enumerate(metrics):
-        if col_name in df.columns:
-            ax = axes[idx // 2, idx % 2]
+    for idx, (metric_name, col_name, scale) in enumerate(metrics[:6]):
+        if col_name not in final_values.columns:
+            continue
             
-            # Boxplot
-            sns.boxplot(data=df, x='rumor-is-true?', y=col_name, ax=ax, palette=['#2ecc71', '#e74c3c'])
-            
-            # Add individual points
-            sns.stripplot(data=df, x='rumor-is-true?', y=col_name, ax=ax, 
-                         color='black', alpha=0.3, size=3)
-            
-            ax.set_xlabel('Rumor Truth Value', fontsize=11)
-            ax.set_ylabel(metric_name, fontsize=11)
-            ax.set_title(f'{metric_name}', fontsize=12, fontweight='bold')
-            
-            # Add significance stars
-            y_max = df[col_name].max()
-            t_stat, p_value = stats.ttest_ind(false_rumors[col_name], true_rumors[col_name])
-            if p_value < 0.05:
-                ax.plot([0, 1], [y_max*1.05, y_max*1.05], 'k-', linewidth=1.5)
-                stars = '***' if p_value < 0.001 else '**' if p_value < 0.01 else '*'
-                ax.text(0.5, y_max*1.08, stars, ha='center', fontsize=14)
+        ax = axes[idx]
+        
+        # Prepare data for plotting
+        plot_data = final_values[['rumor-is-true?', col_name]].copy()
+        plot_data[col_name] = plot_data[col_name] * scale
+        
+        # Violin plot with box plot overlay
+        parts = ax.violinplot([true_final[col_name] * scale, false_final[col_name] * scale],
+                              positions=[0, 1], widths=0.7, showmeans=True, showmedians=True)
+        
+        # Color the violins
+        for pc, color in zip(parts['bodies'], ['green', 'red']):
+            pc.set_facecolor(color)
+            pc.set_alpha(0.3)
+        
+        # Add individual points
+        ax.scatter([0] * len(true_final), true_final[col_name] * scale, 
+                  alpha=0.4, s=30, color='green', edgecolors='darkgreen', linewidths=0.5)
+        ax.scatter([1] * len(false_final), false_final[col_name] * scale,
+                  alpha=0.4, s=30, color='red', edgecolors='darkred', linewidths=0.5)
+        
+        ax.set_xticks([0, 1])
+        ax.set_xticklabels(['True', 'False'])
+        ax.set_xlabel('Rumor Truth Value', fontsize=10)
+        ax.set_ylabel(metric_name, fontsize=10)
+        ax.set_title(metric_name, fontsize=11, fontweight='bold')
+        ax.grid(True, alpha=0.3, axis='y')
+        
+        # Add significance annotation
+        t_stat, p_value = stats.ttest_ind(false_final[col_name] * scale, true_final[col_name] * scale)
+        if p_value < 0.05:
+            y_max = max(true_final[col_name].max(), false_final[col_name].max()) * scale
+            ax.plot([0, 1], [y_max*1.05, y_max*1.05], 'k-', linewidth=1.5)
+            stars = '***' if p_value < 0.001 else '**' if p_value < 0.01 else '*'
+            ax.text(0.5, y_max*1.08, stars, ha='center', fontsize=14, fontweight='bold')
     
     plt.tight_layout()
-    plt.savefig('false_vs_true_comparison.png', dpi=300, bbox_inches='tight')
-    print("\n✅ Saved: false_vs_true_comparison.png")
-    plt.show()
+    plt.savefig('pngs/false_vs_true_comparison.png', dpi=300, bbox_inches='tight')
+    print("\n✅ Saved: pngs/false_vs_true_comparison.png")
+    plt.close()
     
-    return true_rumors, false_rumors
+    # 4. GROWTH RATE ANALYSIS
+    if has_timeseries and '[run number]' in df.columns:
+        print("\n" + "=" * 80)
+        print("📈 GROWTH RATE ANALYSIS")
+        print("=" * 80)
+        
+        awareness_col = 'count turtles with [rumor-known?] / population-size'
+        if awareness_col in df.columns:
+            # Calculate growth rates for each run
+            growth_rates = []
+            
+            for truth_val in ['true', 'false']:
+                subset = df[df['rumor-is-true?'] == truth_val]
+                
+                for run_num in subset['[run number]'].unique():
+                    run_data = subset[subset['[run number]'] == run_num].sort_values('ticks')
+                    
+                    # Find steepest growth period (max derivative)
+                    awareness = run_data[awareness_col].values
+                    ticks = run_data['ticks'].values
+                    
+                    if len(awareness) > 10:
+                        # Calculate rolling growth rate
+                        growth_rate = np.gradient(awareness, ticks)
+                        max_growth_rate = np.max(growth_rate)
+                        
+                        growth_rates.append({
+                            'rumor_type': truth_val,
+                            'run': run_num,
+                            'max_growth_rate': max_growth_rate
+                        })
+            
+            growth_df = pd.DataFrame(growth_rates)
+            
+            print("\nMaximum Growth Rate (awareness/tick):")
+            for truth_val in ['true', 'false']:
+                vals = growth_df[growth_df['rumor_type'] == truth_val]['max_growth_rate']
+                print(f"  {truth_val.capitalize()} rumors: {vals.mean():.4f} ± {vals.std():.4f}")
+            
+            # T-test on growth rates
+            true_growth = growth_df[growth_df['rumor_type'] == 'true']['max_growth_rate']
+            false_growth = growth_df[growth_df['rumor_type'] == 'false']['max_growth_rate']
+            t_stat, p_value = stats.ttest_ind(false_growth, true_growth)
+            print(f"\n  T-test: t={t_stat:.3f}, p={p_value:.4f}")
+    
+    return final_values
 
-def analyze_heterogeneity_effect(df):
-    """
-    Analyze Experiment 2: Heterogeneity Effect
-    """
-    print("\n" + "=" * 70)
-    print("EXPERIMENT 2: HETEROGENEITY EFFECT (Lu 2019 Replication)")
-    print("=" * 70)
+def generate_summary_report(df):
+    """Generate comprehensive summary statistics"""
+    print("\n" + "=" * 80)
+    print("📋 SUMMARY STATISTICS")
+    print("=" * 80)
     
-    # Linear regression
-    from sklearn.linear_model import LinearRegression
-    
-    awareness_col = 'count turtles with [rumor-known?] / population-size'
-    
-    if awareness_col in df.columns:
-        # Separate by truth value
-        for truth_val in ['true', 'false']:
-            subset = df[df['rumor-is-true?'] == truth_val]
-            
-            X = subset['heterogeneity-level'].values.reshape(-1, 1)
-            y = subset[awareness_col].values
-            
-            # Regression
-            model = LinearRegression()
-            model.fit(X, y)
-            
-            # Calculate R²
-            r_squared = model.score(X, y)
-            slope = model.coef_[0]
-            intercept = model.intercept_
-            
-            print(f"\n📈 {truth_val.upper()} RUMORS:")
-            print(f"  Equation: awareness = {intercept:.4f} + {slope:.4f} × heterogeneity")
-            print(f"  R² = {r_squared:.4f}")
-            print(f"  Slope {'positive ✓' if slope > 0 else 'negative ✗'} (Lu predicts positive)")
-            
-            # Significance test
-            from scipy.stats import pearsonr
-            corr, p_value = pearsonr(subset['heterogeneity-level'], subset[awareness_col])
-            print(f"  Correlation: r={corr:.3f}, p={p_value:.4f}")
-        
-        # Visualization
-        fig, axes = plt.subplots(1, 2, figsize=(14, 5))
-        fig.suptitle('Heterogeneity Effect on Rumor Spread', fontsize=16, fontweight='bold')
-        
-        for idx, truth_val in enumerate(['true', 'false']):
-            ax = axes[idx]
-            subset = df[df['rumor-is-true?'] == truth_val]
-            
-            # Scatter plot
-            sns.scatterplot(data=subset, x='heterogeneity-level', y=awareness_col, 
-                           ax=ax, alpha=0.6, s=80)
-            
-            # Regression line
-            X = subset['heterogeneity-level'].values.reshape(-1, 1)
-            y = subset[awareness_col].values
-            model = LinearRegression()
-            model.fit(X, y)
-            
-            x_line = np.linspace(X.min(), X.max(), 100)
-            y_line = model.predict(x_line.reshape(-1, 1))
-            ax.plot(x_line, y_line, 'r-', linewidth=2, label=f'R²={model.score(X, y):.3f}')
-            
-            ax.set_xlabel('Heterogeneity Level', fontsize=11)
-            ax.set_ylabel('Awareness Proportion', fontsize=11)
-            ax.set_title(f'{truth_val.capitalize()} Rumors', fontsize=12, fontweight='bold')
-            ax.legend()
-            ax.grid(True, alpha=0.3)
-        
-        plt.tight_layout()
-        plt.savefig('heterogeneity_effect.png', dpi=300, bbox_inches='tight')
-        print("\n✅ Saved: heterogeneity_effect.png")
-        plt.show()
-
-def analyze_network_structure(df):
-    """
-    Analyze Experiment 3: Network Structure Effect
-    """
-    print("\n" + "=" * 70)
-    print("EXPERIMENT 3: NETWORK STRUCTURE EFFECT")
-    print("=" * 70)
-    
-    # ANOVA
-    from scipy.stats import f_oneway
-    
-    awareness_col = 'count turtles with [rumor-known?] / population-size'
-    
-    if awareness_col in df.columns:
-        # Separate by truth value
-        for truth_val in ['true', 'false']:
-            subset = df[df['rumor-is-true?'] == truth_val]
-            
-            random = subset[subset['network-type'] == 'random'][awareness_col]
-            small_world = subset[subset['network-type'] == 'small-world'][awareness_col]
-            scale_free = subset[subset['network-type'] == 'scale-free'][awareness_col]
-            
-            # ANOVA
-            f_stat, p_value = f_oneway(random, small_world, scale_free)
-            
-            print(f"\n📊 {truth_val.upper()} RUMORS:")
-            print(f"  Random:      {random.mean():.4f} ± {random.std():.4f}")
-            print(f"  Small-world: {small_world.mean():.4f} ± {small_world.std():.4f}")
-            print(f"  Scale-free:  {scale_free.mean():.4f} ± {scale_free.std():.4f}")
-            print(f"  ANOVA: F={f_stat:.3f}, p={p_value:.4f}")
-        
-        # Visualization
-        fig, axes = plt.subplots(1, 2, figsize=(14, 5))
-        fig.suptitle('Network Structure Effect on Rumor Spread', fontsize=16, fontweight='bold')
-        
-        for idx, truth_val in enumerate(['true', 'false']):
-            ax = axes[idx]
-            subset = df[df['rumor-is-true?'] == truth_val]
-            
-            sns.boxplot(data=subset, x='network-type', y=awareness_col, ax=ax,
-                       palette='Set2')
-            sns.stripplot(data=subset, x='network-type', y=awareness_col, ax=ax,
-                         color='black', alpha=0.3, size=4)
-            
-            ax.set_xlabel('Network Type', fontsize=11)
-            ax.set_ylabel('Awareness Proportion', fontsize=11)
-            ax.set_title(f'{truth_val.capitalize()} Rumors', fontsize=12, fontweight='bold')
-            ax.set_xticklabels(['Random', 'Small-World', 'Scale-Free'])
-        
-        plt.tight_layout()
-        plt.savefig('network_structure_effect.png', dpi=300, bbox_inches='tight')
-        print("\n✅ Saved: network_structure_effect.png")
-        plt.show()
-
-def analyze_time_series(df):
-    """
-    Analyze Experiment 7: Time Series Dynamics
-    """
-    print("\n" + "=" * 70)
-    print("EXPERIMENT 7: TEMPORAL DYNAMICS")
-    print("=" * 70)
-    
-    awareness_col = 'count turtles with [rumor-known?] / population-size'
-    
-    if 'ticks' in df.columns and awareness_col in df.columns:
-        print(f"✓ Data contains {len(df['[run number]'].unique())} runs")
-        print(f"✓ Time range: {df['ticks'].min()} to {df['ticks'].max()} ticks")
-        
-        # Group by run and calculate mean trajectories
-        fig, axes = plt.subplots(1, 2, figsize=(14, 5))
-        fig.suptitle('Rumor Growth Dynamics Over Time', fontsize=16, fontweight='bold')
-        
-        for idx, truth_val in enumerate(['true', 'false']):
-            ax = axes[idx]
-            subset = df[df['rumor-is-true?'] == truth_val]
-            
-            if len(subset) == 0:
-                print(f"⚠️  No data for {truth_val} rumors")
-                continue
-            
-            print(f"✓ Plotting {len(subset['[run number]'].unique())} runs for {truth_val} rumors")
-            
-            # Plot individual runs (light lines)
-            for run_num in subset['[run number]'].unique():
-                run_data = subset[subset['[run number]'] == run_num].sort_values('ticks')
-                ax.plot(run_data['ticks'], run_data[awareness_col], 
-                       alpha=0.2, color='gray', linewidth=0.5)
-            
-            # Plot mean trajectory (bold line)
-            mean_trajectory = subset.groupby('ticks')[awareness_col].mean()
-            ax.plot(mean_trajectory.index, mean_trajectory.values,
-                   color='red' if truth_val == 'false' else 'green',
-                   linewidth=3, label='Mean')
-            
-            ax.set_xlabel('Time (ticks)', fontsize=11)
-            ax.set_ylabel('Awareness Proportion', fontsize=11)
-            ax.set_title(f'{truth_val.capitalize()} Rumors', fontsize=12, fontweight='bold')
-            ax.legend()
-            ax.grid(True, alpha=0.3)
-        
-        plt.tight_layout()
-        plt.savefig('time_series_dynamics.png', dpi=300, bbox_inches='tight')
-        print("\n✅ Saved: time_series_dynamics.png")
-        plt.show()
-
-def generate_summary_report(df, experiment_name):
-    """Generate comprehensive summary report"""
-    print("\n" + "=" * 70)
-    print(f"SUMMARY REPORT: {experiment_name}")
-    print("=" * 70)
-    
-    print(f"\n📋 Dataset Information:")
-    print(f"  Total runs: {len(df)}")
-    print(f"  Parameters varied: {[col for col in df.columns if df[col].nunique() > 1 and col not in ['[run number]', 'ticks']]}")
-    print(f"  Metrics collected: {len([col for col in df.columns if '[' in col or 'mean' in col or 'count' in col])}")
-    
-    # Save summary statistics
+    # Save detailed summary
     summary = df.describe()
-    summary.to_csv(f'{experiment_name}_summary_stats.csv')
-    print(f"\n✅ Saved: {experiment_name}_summary_stats.csv")
+    summary.to_csv('results/false_vs_true_summary_stats.csv')
+    print("✅ Saved: results/false_vs_true_summary_stats.csv")
+    
+    # Key findings summary
+    print("\n🔍 KEY FINDINGS:")
+    
+    awareness_col = 'count turtles with [rumor-known?] / population-size'
+    if awareness_col in df.columns:
+        # Get final values
+        if '[run number]' in df.columns and 'ticks' in df.columns:
+            final_values = df.loc[df.groupby('[run number]')['ticks'].idxmax()]
+        else:
+            final_values = df
+        
+        true_awareness = final_values[final_values['rumor-is-true?'] == 'true'][awareness_col].mean()
+        false_awareness = final_values[final_values['rumor-is-true?'] == 'false'][awareness_col].mean()
+        
+        if false_awareness > true_awareness:
+            print(f"  ⚠️  FALSE rumors spread MORE widely ({false_awareness*100:.1f}% vs {true_awareness*100:.1f}%)")
+        else:
+            print(f"  ✓ TRUE rumors spread more widely ({true_awareness*100:.1f}% vs {false_awareness*100:.1f}%)")
 
 # Main analysis pipeline
 if __name__ == "__main__":
-    print("🔬 RUMOR PROPAGATION ANALYSIS - ALL EXPERIMENTS")
-    print("=" * 70)
+    print("🔬 RUMOR PROPAGATION ANALYSIS")
+    print("=" * 80)
+    print("Analyzing: False vs True Rumor Time-Series Experiment")
+    print("=" * 80)
     
-    # Define all 8 experiments
-    experiments = [
-        {
-            'name': 'Experiment 1: False vs True Rumor',
-            'file': 'results/exp1_false_vs_true.csv',
-            'analyses': ['false_vs_true']
-        },
-        {
-            'name': 'Experiment 2: Heterogeneity Effect',
-            'file': 'results/exp2_heterogeneity.csv',
-            'analyses': ['heterogeneity']
-        },
-        {
-            'name': 'Experiment 3: Network Structure',
-            'file': 'results/exp3_networks.csv',
-            'analyses': ['network']
-        },
-        {
-            'name': 'Experiment 4: Verification Timing',
-            'file': 'results/exp4_verification.csv',
-            'analyses': ['summary']
-        },
-        {
-            'name': 'Experiment 5: Learning Rate',
-            'file': 'results/exp5_learning.csv',
-            'analyses': ['summary']
-        },
-        {
-            'name': 'Experiment 6: Initial Trust',
-            'file': 'results/exp6_trust.csv',
-            'analyses': ['summary']
-        },
-        {
-            'name': 'Experiment 7: Time Series',
-            'file': 'results/exp7_timeseries.csv',
-            'analyses': ['timeseries']
-        },
-        {
-            'name': 'Experiment 8: Full Factorial',
-            'file': 'results/exp8_factorial.csv',
-            'analyses': ['summary']
-        }
+    import os
+    
+    # Create output directory if it doesn't exist
+    os.makedirs('pngs', exist_ok=True)
+    os.makedirs('results', exist_ok=True)
+    
+    # Primary experiment file
+    experiment_file = 'results/false_vs_true_rumor-table.csv'
+    
+    # Alternative file names to check
+    alternative_files = [
+        'false_vs_true_rumor-table.csv',
+        'results/exp1_false_vs_true.csv',
+        'model false-vs-true-rumor-table.csv',
+        'results/model false-vs-true-rumor-table.csv'
     ]
     
-    # Track which experiments were successfully analyzed
-    successful = []
-    failed = []
-    
-    # Process each experiment
-    for exp in experiments:
-        print(f"\n{'='*70}")
-        print(f"📊 {exp['name']}")
-        print(f"📂 File: {exp['file']}")
-        print('='*70)
-        
-        try:
-            # Check if file exists
-            import os
-            if not os.path.exists(exp['file']):
-                print(f"⏭️  Skipping - file not found")
-                failed.append(exp['name'])
-                continue
-            
-            # Load data
-            df = load_experiment_data(exp['file'])
-            print(f"✅ Loaded {len(df)} runs successfully")
-            
-            # Run appropriate analyses
-            for analysis_type in exp['analyses']:
-                if analysis_type == 'false_vs_true' and 'rumor-is-true?' in df.columns:
-                    if df['rumor-is-true?'].nunique() == 2:
-                        analyze_false_vs_true(df)
-                
-                elif analysis_type == 'heterogeneity' and 'heterogeneity-level' in df.columns:
-                    if df['heterogeneity-level'].nunique() > 1:
-                        analyze_heterogeneity_effect(df)
-                
-                elif analysis_type == 'network' and 'network-type' in df.columns:
-                    if df['network-type'].nunique() > 1:
-                        analyze_network_structure(df)
-                
-                elif analysis_type == 'timeseries' and 'ticks' in df.columns:
-                    analyze_time_series(df)
-                
-                elif analysis_type == 'summary':
-                    generate_summary_report(df, exp['file'].replace('.csv', ''))
-            
-            successful.append(exp['name'])
-            
-        except FileNotFoundError:
-            print(f"⏭️  Skipping - file not found")
-            failed.append(exp['name'])
-        except Exception as e:
-            print(f"❌ Error: {e}")
-            import traceback
-            traceback.print_exc()
-            failed.append(exp['name'])
-    
-    # Final summary
-    print("\n" + "=" * 70)
-    print("📋 ANALYSIS SUMMARY")
-    print("=" * 70)
-    
-    if successful:
-        print(f"\n✅ Successfully analyzed ({len(successful)}):")
-        for exp_name in successful:
-            print(f"   • {exp_name}")
-    
-    if failed:
-        print(f"\n⏭️  Skipped/Failed ({len(failed)}):")
-        for exp_name in failed:
-            print(f"   • {exp_name}")
-        print(f"\n💡 Tip: Run the experiments first using:")
-        print(f"   ./run_experiments.fish")
-        print(f"   or manually through BehaviorSpace")
-    
-    if successful:
-        print("\n" + "=" * 70)
-        print("✅ ANALYSIS COMPLETE!")
-        print("=" * 70)
-        print("\n📁 Generated files:")
-        print("   • false_vs_true_comparison.png")
-        print("   • heterogeneity_effect.png")
-        print("   • network_structure_effect.png")
-        print("   • time_series_dynamics.png")
-        print("   • *_summary_stats.csv")
-        print("\n📊 Use these figures in your research paper!")
+    # Find the experiment file
+    data_file = None
+    if os.path.exists(experiment_file):
+        data_file = experiment_file
     else:
-        print("\n❌ No experiments were analyzed")
-        print("Run experiments first, then re-run this script")
+        for alt_file in alternative_files:
+            if os.path.exists(alt_file):
+                data_file = alt_file
+                break
+    
+    if data_file is None:
+        print("\n❌ ERROR: Experiment data file not found!")
+        print("\nLooked for:")
+        print(f"  • {experiment_file}")
+        for alt in alternative_files:
+            print(f"  • {alt}")
+        print("\n💡 Please run the experiment first using:")
+        print("   1. Open NetLogo")
+        print("   2. Load atp_code_g25.nlogo")
+        print("   3. Tools → BehaviorSpace")
+        print("   4. Run 'false-vs-true-rumor' experiment")
+        print("   5. Save results to results/ directory")
+        exit(1)
+    
+    print(f"\n📂 Loading data from: {data_file}")
+    
+    try:
+        # Load data
+        df = load_experiment_data(data_file)
+        print(f"✅ Loaded {len(df)} data points successfully")
+        
+        # Perform analysis
+        final_values = analyze_false_vs_true_timeseries(df)
+        generate_summary_report(df)
+        
+        print("\n" + "=" * 80)
+        print("✅ ANALYSIS COMPLETE!")
+        print("=" * 80)
+        print("\n📁 Generated files:")
+        print("   • pngs/timeseries_dynamics.png")
+        print("   • pngs/false_vs_true_comparison.png")
+        print("   • results/false_vs_true_summary_stats.csv")
+        print("\n📊 Use these figures in your research paper!")
+        
+    except Exception as e:
+        print(f"\n❌ ERROR during analysis: {e}")
+        import traceback
+        traceback.print_exc()

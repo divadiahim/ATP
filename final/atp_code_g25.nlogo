@@ -58,7 +58,7 @@ to setup
   set acceptance-threshold-max 0.9
   set initial-belief-min 0.7
   set initial-belief-range 0.3
-  set default-trust-value 0.5
+  set default-trust-value 0.7  ;; Increased from 0.5 to allow stronger belief transmission
   set rewiring-probability 0.1
   set agreement-reinforcement 0.7
   set verification-adjustment 0.5
@@ -226,53 +226,54 @@ to spread-rumor
 
     let my-neighbors link-neighbors
 
-    if any? my-neighbors [
+    ;; Attempt to spread to ALL neighbors (not just one)
+    ;; This ensures reasonable spreading dynamics
+    ask my-neighbors [
+      let target-id who
+      let sender-id [who] of myself
+      let sender-belief [belief] of myself
 
-      ;; Select one random neighbor to share with (per timestep)
-      let target one-of my-neighbors
-      let target-id [who] of target
-
-      ;; Get trust in the target (not used in transmission, but available)
-      let my-trust table:get-or-default trust-table target-id default-trust-value
+      ;; Get trust in the sender
+      let trust-in-sender table:get-or-default trust-table sender-id default-trust-value
 
       ;; Transmission probability = sender's belief level
       ;; Higher belief → more likely to share
-      if random-float 1 < belief [
+      if random-float 1 < sender-belief [
 
-        ;; Target receives the message
-        ask target [
-          let sender-id [who] of myself
-          let sender-belief [belief] of myself
+        ;; Update exposure tracking
+        set times-heard times-heard + 1
+        if not member? sender-id sources-list [
+          set sources-list lput sender-id sources-list
+        ]
 
-          ;; Get trust in the sender
-          let trust-in-sender table:get-or-default trust-table sender-id default-trust-value
+        ;; Calculate influence: trust × sender's belief
+        let influence trust-in-sender * sender-belief
 
-          ;; Update exposure tracking
-          set times-heard times-heard + 1
-          if not member? sender-id sources-list [
-            set sources-list lput sender-id sources-list
-          ]
+        ;; Combined threshold accounts for judgment quality
+        ;; Better judgment → higher effective threshold (more skeptical)
+        let combined-threshold acceptance-threshold * (1 - judgment-quality)
 
-          ;; Calculate influence: trust × sender's belief
-          let influence trust-in-sender * sender-belief
-
-          ;; Combined threshold accounts for judgment quality
-          ;; Better judgment → higher effective threshold (more skeptical)
-          let combined-threshold acceptance-threshold * (1 - judgment-quality)
-
-          ;; Accept rumor if: influence exceeds threshold OR heard enough times
-          if influence > combined-threshold or times-heard > hearing-threshold [
+        ;; Accept rumor if: influence exceeds threshold OR heard enough times
+        if influence > combined-threshold or times-heard > hearing-threshold [
+          
+          ;; If first time hearing rumor, set initial belief based on influence
+          ;; Otherwise update existing belief
+          ifelse not rumor-known? [
             set rumor-known? true
-
-            ;; Belief updating: weighted average toward sender's belief
+            ;; Initial belief = influence (trust × sender's belief)
+            ;; This ensures new believers start with reasonable conviction
+            set belief influence
+          ] [
+            ;; Already knew rumor: update belief toward sender's belief
             ;; B_i(t+1) = B_i(t) + T_ij * (B_j(t) - B_i(t))
             let belief-change trust-in-sender * (sender-belief - belief)
             set belief belief + belief-change
-            set belief max list 0 (min list 1 belief)  ;; Clamp to [0,1]
-
-            ;; Record message for future trust updating
-            set message-history lput (list sender-id sender-belief) message-history
           ]
+          
+          set belief max list 0 (min list 1 belief)  ;; Clamp to [0,1]
+
+          ;; Record message for future trust updating
+          set message-history lput (list sender-id sender-belief) message-history
         ]
       ]
     ]
@@ -1326,19 +1327,23 @@ NetLogo 6.4.0
 @#$#@#$#@
 @#$#@#$#@
 <experiments>
-  <experiment name="false-vs-true-rumor" repetitions="20" runMetricsEveryStep="false">
+  <experiment name="false-vs-true-rumor" repetitions="50" runMetricsEveryStep="true">
     <setup>setup</setup>
     <go>go</go>
     <timeLimit steps="500"/>
-    <exitCondition>ticks &gt;= max-ticks</exitCondition>
+    <metric>ticks</metric>
     <metric>count turtles with [rumor-known?]</metric>
     <metric>count turtles with [rumor-known?] / population-size</metric>
     <metric>mean [belief] of turtles</metric>
-    <metric>mean [belief] of turtles with [rumor-known?]</metric>
+    <metric>ifelse-value (any? turtles with [rumor-known?]) [mean [belief] of turtles with [rumor-known?]] [0]</metric>
     <metric>count turtles with [belief &gt; 0.5]</metric>
+    <metric>count turtles with [belief &gt; 0.5] / population-size</metric>
+    <metric>count turtles with [belief &gt; 0.7]</metric>
+    <metric>count turtles with [belief &gt; 0.7] / population-size</metric>
     <metric>variance [belief] of turtles</metric>
     <metric>max [belief] of turtles</metric>
-    <metric>min [belief] of turtles with [rumor-known?]</metric>
+    <metric>ifelse-value (any? turtles with [rumor-known?]) [min [belief] of turtles with [rumor-known?]] [0]</metric>
+    <metric>standard-deviation [belief] of turtles</metric>
     <enumeratedValueSet variable="population-size">
       <value value="200"/>
     </enumeratedValueSet>
@@ -1385,423 +1390,8 @@ NetLogo 6.4.0
     <enumeratedValueSet variable="max-ticks">
       <value value="500"/>
     </enumeratedValueSet>
-  </experiment>
-  <experiment name="heterogeneity-effect" repetitions="15" runMetricsEveryStep="false">
-    <setup>setup</setup>
-    <go>go</go>
-    <timeLimit steps="500"/>
-    <metric>count turtles with [rumor-known?] / population-size</metric>
-    <metric>mean [belief] of turtles</metric>
-    <metric>count turtles with [belief &gt; 0.5] / population-size</metric>
-    <metric>ticks</metric>
-    <enumeratedValueSet variable="population-size">
-      <value value="200"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="avg-degree">
-      <value value="6"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="initial-seeds">
-      <value value="5"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="network-type">
-      <value value="&quot;small-world&quot;"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="rumor-is-true?">
-      <value value="&quot;true&quot;"/>
-      <value value="&quot;false&quot;"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="heterogeneity-level">
-      <value value="0.05"/>
-      <value value="0.1"/>
-      <value value="0.15"/>
-      <value value="0.2"/>
-      <value value="0.25"/>
-      <value value="0.3"/>
-      <value value="0.35"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="learning-rate">
-      <value value="0.1"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="initial-trust-mean">
-      <value value="0.5"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="initial-trust-sd">
-      <value value="0.15"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="hearing-threshold">
-      <value value="3"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="trust-update-interval">
-      <value value="10"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="verify-rumor?">
-      <value value="false"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="verification-delay">
-      <value value="200"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="show-trust-links?">
-      <value value="false"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="max-ticks">
-      <value value="500"/>
-    </enumeratedValueSet>
-  </experiment>
-  <experiment name="network-structure-effect" repetitions="20" runMetricsEveryStep="false">
-    <setup>setup</setup>
-    <go>go</go>
-    <timeLimit steps="500"/>
-    <metric>count turtles with [rumor-known?] / population-size</metric>
-    <metric>mean [belief] of turtles</metric>
-    <metric>count turtles with [belief &gt; 0.5]</metric>
-    <metric>variance [belief] of turtles</metric>
-    <enumeratedValueSet variable="population-size">
-      <value value="200"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="avg-degree">
-      <value value="6"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="initial-seeds">
-      <value value="5"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="network-type">
-      <value value="&quot;random&quot;"/>
-      <value value="&quot;small-world&quot;"/>
-      <value value="&quot;scale-free&quot;"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="rumor-is-true?">
-      <value value="&quot;true&quot;"/>
-      <value value="&quot;false&quot;"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="heterogeneity-level">
-      <value value="0.2"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="learning-rate">
-      <value value="0.1"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="initial-trust-mean">
-      <value value="0.5"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="initial-trust-sd">
-      <value value="0.15"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="hearing-threshold">
-      <value value="3"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="trust-update-interval">
-      <value value="10"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="verify-rumor?">
-      <value value="false"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="verification-delay">
-      <value value="200"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="show-trust-links?">
-      <value value="false"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="max-ticks">
-      <value value="500"/>
-    </enumeratedValueSet>
-  </experiment>
-  <experiment name="verification-timing" repetitions="15" runMetricsEveryStep="false">
-    <setup>setup</setup>
-    <go>go</go>
-    <timeLimit steps="600"/>
-    <metric>count turtles with [rumor-known?] / population-size</metric>
-    <metric>mean [belief] of turtles</metric>
-    <metric>mean [belief] of turtles with [rumor-known?]</metric>
-    <metric>count turtles with [belief &gt; 0.5] / population-size</metric>
-    <metric>verified?</metric>
-    <metric>verification-tick</metric>
-    <enumeratedValueSet variable="population-size">
-      <value value="200"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="avg-degree">
-      <value value="6"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="initial-seeds">
-      <value value="5"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="network-type">
-      <value value="&quot;small-world&quot;"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="rumor-is-true?">
-      <value value="&quot;false&quot;"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="heterogeneity-level">
-      <value value="0.2"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="learning-rate">
-      <value value="0.1"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="initial-trust-mean">
-      <value value="0.5"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="initial-trust-sd">
-      <value value="0.15"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="hearing-threshold">
-      <value value="3"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="trust-update-interval">
-      <value value="10"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="verify-rumor?">
+    <enumeratedValueSet variable="auto-stop?">
       <value value="true"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="verification-delay">
-      <value value="50"/>
-      <value value="100"/>
-      <value value="150"/>
-      <value value="200"/>
-      <value value="300"/>
-      <value value="400"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="show-trust-links?">
-      <value value="false"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="max-ticks">
-      <value value="600"/>
-    </enumeratedValueSet>
-  </experiment>
-  <experiment name="learning-rate-sensitivity" repetitions="15" runMetricsEveryStep="false">
-    <setup>setup</setup>
-    <go>go</go>
-    <timeLimit steps="600"/>
-    <metric>count turtles with [rumor-known?] / population-size</metric>
-    <metric>mean [belief] of turtles</metric>
-    <metric>count turtles with [belief &gt; 0.5] / population-size</metric>
-    <metric>variance [belief] of turtles</metric>
-    <enumeratedValueSet variable="population-size">
-      <value value="200"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="avg-degree">
-      <value value="6"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="initial-seeds">
-      <value value="5"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="network-type">
-      <value value="&quot;small-world&quot;"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="rumor-is-true?">
-      <value value="&quot;false&quot;"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="heterogeneity-level">
-      <value value="0.2"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="learning-rate">
-      <value value="0.05"/>
-      <value value="0.1"/>
-      <value value="0.15"/>
-      <value value="0.2"/>
-      <value value="0.25"/>
-      <value value="0.3"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="initial-trust-mean">
-      <value value="0.5"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="initial-trust-sd">
-      <value value="0.15"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="hearing-threshold">
-      <value value="3"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="trust-update-interval">
-      <value value="10"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="verify-rumor?">
-      <value value="true"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="verification-delay">
-      <value value="200"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="show-trust-links?">
-      <value value="false"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="max-ticks">
-      <value value="600"/>
-    </enumeratedValueSet>
-  </experiment>
-  <experiment name="initial-trust-effect" repetitions="15" runMetricsEveryStep="false">
-    <setup>setup</setup>
-    <go>go</go>
-    <timeLimit steps="500"/>
-    <metric>count turtles with [rumor-known?] / population-size</metric>
-    <metric>mean [belief] of turtles</metric>
-    <metric>count turtles with [belief &gt; 0.5] / population-size</metric>
-    <enumeratedValueSet variable="population-size">
-      <value value="200"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="avg-degree">
-      <value value="6"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="initial-seeds">
-      <value value="5"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="network-type">
-      <value value="&quot;small-world&quot;"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="rumor-is-true?">
-      <value value="&quot;true&quot;"/>
-      <value value="&quot;false&quot;"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="heterogeneity-level">
-      <value value="0.2"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="learning-rate">
-      <value value="0.1"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="initial-trust-mean">
-      <value value="0.2"/>
-      <value value="0.35"/>
-      <value value="0.5"/>
-      <value value="0.65"/>
-      <value value="0.8"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="initial-trust-sd">
-      <value value="0.15"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="hearing-threshold">
-      <value value="3"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="trust-update-interval">
-      <value value="10"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="verify-rumor?">
-      <value value="false"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="verification-delay">
-      <value value="200"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="show-trust-links?">
-      <value value="false"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="max-ticks">
-      <value value="500"/>
-    </enumeratedValueSet>
-  </experiment>
-  <experiment name="time-series-dynamics" repetitions="10" runMetricsEveryStep="true">
-    <setup>setup</setup>
-    <go>go</go>
-    <timeLimit steps="500"/>
-    <metric>ticks</metric>
-    <metric>count turtles with [rumor-known?]</metric>
-    <metric>count turtles with [rumor-known?] / population-size</metric>
-    <metric>mean [belief] of turtles</metric>
-    <metric>mean [belief] of turtles with [rumor-known?]</metric>
-    <metric>count turtles with [belief &gt; 0.5]</metric>
-    <metric>count turtles with [belief &gt; 0.7]</metric>
-    <metric>variance [belief] of turtles</metric>
-    <enumeratedValueSet variable="population-size">
-      <value value="200"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="avg-degree">
-      <value value="6"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="initial-seeds">
-      <value value="5"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="network-type">
-      <value value="&quot;small-world&quot;"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="rumor-is-true?">
-      <value value="&quot;true&quot;"/>
-      <value value="&quot;false&quot;"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="heterogeneity-level">
-      <value value="0.1"/>
-      <value value="0.3"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="learning-rate">
-      <value value="0.1"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="initial-trust-mean">
-      <value value="0.5"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="initial-trust-sd">
-      <value value="0.15"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="hearing-threshold">
-      <value value="3"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="trust-update-interval">
-      <value value="10"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="verify-rumor?">
-      <value value="false"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="verification-delay">
-      <value value="200"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="show-trust-links?">
-      <value value="false"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="max-ticks">
-      <value value="500"/>
-    </enumeratedValueSet>
-  </experiment>
-  <experiment name="full-factorial-analysis" repetitions="10" runMetricsEveryStep="false">
-    <setup>setup</setup>
-    <go>go</go>
-    <timeLimit steps="500"/>
-    <metric>count turtles with [rumor-known?] / population-size</metric>
-    <metric>mean [belief] of turtles</metric>
-    <metric>mean [belief] of turtles with [rumor-known?]</metric>
-    <metric>count turtles with [belief &gt; 0.5] / population-size</metric>
-    <metric>variance [belief] of turtles</metric>
-    <enumeratedValueSet variable="population-size">
-      <value value="200"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="avg-degree">
-      <value value="6"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="initial-seeds">
-      <value value="5"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="network-type">
-      <value value="&quot;random&quot;"/>
-      <value value="&quot;small-world&quot;"/>
-      <value value="&quot;scale-free&quot;"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="rumor-is-true?">
-      <value value="&quot;true&quot;"/>
-      <value value="&quot;false&quot;"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="heterogeneity-level">
-      <value value="0.1"/>
-      <value value="0.2"/>
-      <value value="0.3"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="learning-rate">
-      <value value="0.1"/>
-      <value value="0.2"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="initial-trust-mean">
-      <value value="0.4"/>
-      <value value="0.6"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="initial-trust-sd">
-      <value value="0.15"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="hearing-threshold">
-      <value value="3"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="trust-update-interval">
-      <value value="10"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="verify-rumor?">
-      <value value="false"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="verification-delay">
-      <value value="200"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="show-trust-links?">
-      <value value="false"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="max-ticks">
-      <value value="500"/>
     </enumeratedValueSet>
   </experiment>
 </experiments>

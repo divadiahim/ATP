@@ -8,13 +8,12 @@ extensions [table]  ;; Enable table data structure for efficient sparse storage 
 ;; Global variables shared across all agents
 globals [
   rumor-truth?              ;; Boolean: is the rumor actually true or false?
-  rumor-known?              ;; Boolean: general tracking of rumor awareness
   avg-belief-history        ;; List: tracks mean belief level over time
   aware-count-history       ;; List: tracks proportion of aware agents over time
   trust-variance-history    ;; List: tracks variance in trust values over time
   verification-tick         ;; Integer: timestep when verification event occurred
   verified?                 ;; Boolean: has the rumor been verified yet?
-  
+
   ;; Model constants (initialized in setup)
   agent-attribute-mean      ;; Mean for judgment-quality and acceptance-threshold (default: 0.5)
   acceptance-threshold-min  ;; Minimum acceptance threshold (default: 0.1)
@@ -34,6 +33,7 @@ globals [
 
 ;; Agent-level properties
 turtles-own [
+  rumor-known?              ;; Boolean: does this agent know about the rumor?
   belief                    ;; Float [0,1]: current belief in the rumor
   trust-table               ;; Table: maps neighbor ID -> trust value [0,1]
   times-heard               ;; Integer: number of times agent heard the rumor
@@ -51,7 +51,7 @@ turtles-own [
 to setup
   clear-all
   set-default-shape turtles "person"
-  
+
   ;; Initialize model constants
   set agent-attribute-mean 0.5
   set acceptance-threshold-min 0.1
@@ -138,7 +138,7 @@ to setup
     ;; Initialize core network
     ask turtle 0 [create-links-with other turtles with [who < avg-degree]]
     let existing-nodes turtles with [who < avg-degree]
-    
+
     ;; Add remaining nodes with preferential attachment
     ask turtles with [who >= avg-degree] [
       let targets n-of (min list avg-degree count existing-nodes) existing-nodes
@@ -255,21 +255,21 @@ to spread-rumor
 
         ;; Accept rumor if: influence exceeds threshold OR heard enough times
         if influence > combined-threshold or times-heard > hearing-threshold [
-          
-          ;; If first time hearing rumor, set initial belief based on influence
+
+          ;; If first time accepting rumor, set initial belief
           ;; Otherwise update existing belief
           ifelse not rumor-known? [
             set rumor-known? true
-            ;; Initial belief = influence (trust × sender's belief)
-            ;; This ensures new believers start with reasonable conviction
-            set belief influence
+            ;; Initial belief = weighted average of influence and sender's belief
+            ;; This allows beliefs to propagate more strongly through the network
+            set belief (influence + sender-belief) / 2
           ] [
             ;; Already knew rumor: update belief toward sender's belief
             ;; B_i(t+1) = B_i(t) + T_ij * (B_j(t) - B_i(t))
             let belief-change trust-in-sender * (sender-belief - belief)
             set belief belief + belief-change
           ]
-          
+
           set belief max list 0 (min list 1 belief)  ;; Clamp to [0,1]
 
           ;; Record message for future trust updating
@@ -298,7 +298,7 @@ to update-trust
       let reinforcement 0
       ifelse verified? [
         ;; If rumor has been verified, we know the ground truth
-        
+
         ifelse rumor-truth? [
           ;; Rumor is true: reward high belief
           set reinforcement sender-belief
@@ -308,11 +308,11 @@ to update-trust
         ]
       ]  [
         ;; If not yet verified, estimate based on own judgment
-        
+
         ;; Estimated truth = weighted combination of own belief and neutral (default-trust-value)
         ;; Higher judgment quality → more weight on own assessment
         let estimated-truth belief * judgment-quality + (1 - judgment-quality) * default-trust-value
-        
+
         ;; Reward agreement: if both believe or both disbelieve
         if sender-belief > default-trust-value and estimated-truth > default-trust-value [
           set reinforcement agreement-reinforcement
@@ -383,12 +383,12 @@ to update-visualization
       let node2 end2
       let id1 [who] of node1
       let id2 [who] of node2
-      
+
       ;; Get bidirectional trust values
       let t1 [table:get-or-default trust-table id2 default-trust-value] of node1
       let t2 [table:get-or-default trust-table id1 default-trust-value] of node2
       let avg-trust (t1 + t2) / 2
-      
+
       ;; Blue intensity indicates trust level
       set color scale-color blue avg-trust viz-scale-upper viz-scale-lower
       set thickness trust-link-base-thickness + avg-trust * trust-link-scale-factor  ;; Thickness reflects trust strength

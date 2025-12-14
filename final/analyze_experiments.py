@@ -178,11 +178,19 @@ def analyze_false_vs_true_timeseries(df):
         print()
     
     # 3. END-STATE VISUALIZATION
-    fig, axes = plt.subplots(2, 3, figsize=(16, 9))
+    # Exclude Awareness and Very Strong Believers from comparison plots
+    comparison_metrics = [
+        ('Mean Belief', 'mean [belief] of turtles', 1),
+        ('Aware Mean Belief', 'ifelse-value (any? turtles with [rumor-known?]) [mean [belief] of turtles with [rumor-known?]] [0]', 1),
+        ('Strong Believers (%)', 'count turtles with [belief > 0.5] / population-size', 100),
+        ('Belief Variance', 'variance [belief] of turtles', 1),
+    ]
+    
+    fig, axes = plt.subplots(2, 2, figsize=(12, 9))
     fig.suptitle('False vs True Rumor: Final State Comparison', fontsize=16, fontweight='bold')
     axes = axes.flatten()
     
-    for idx, (metric_name, col_name, scale) in enumerate(metrics[:6]):
+    for idx, (metric_name, col_name, scale) in enumerate(comparison_metrics):
         if col_name not in final_values.columns:
             continue
             
